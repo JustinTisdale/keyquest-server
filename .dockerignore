@@ -1,0 +1,9 @@
+**
+!Dockerfile
+!index.html
+!manifest.webmanifest
+!LICENSE
+!css/
+!css/**
+!js/
+!js/**

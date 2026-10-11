@@ -42,6 +42,24 @@ Then open <http://localhost:8080>.
 
 Progress is saved in the browser's local storage on that computer. Use *Settings → Export progress* to move it somewhere else.
 
+## Running with Docker
+
+Install Docker with Docker Compose, then run from the `keyquest-server` directory:
+
+```bash
+docker compose up --build -d
+```
+
+Open <http://localhost:8080>. The image uses Nginx to serve the static app; no Node.js installation or build step is needed. Change `8080` in `docker-compose.yml` to use a different host port.
+
+Stop the server with:
+
+```bash
+docker compose down
+```
+
+Profiles and progress remain in each browser's local storage, so no container volume is needed. A different hostname or port has separate browser storage; use *Settings → Export progress* before moving to another address.
+
 ## Project layout
 
 ```
