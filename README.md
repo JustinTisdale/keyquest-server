@@ -1,6 +1,8 @@
-# KeyQuest ⌨️
+# KeyQuest Server ⌨️
 
-A free, open-source typing tutor for kids, in the spirit of the classic Mavis Beacon Teaches Typing.
+KeyQuest Server is a fork of [the original KeyQuest project by ovurevu](https://github.com/ovurevu/keyquest). This fork provides a convenient Docker package for hosting the app, with a minimal Nginx image and Docker Compose configuration. See [Running with Docker](#running-with-docker) to get started.
+
+KeyQuest is a free, open-source typing tutor for kids, in the spirit of the classic Mavis Beacon Teaches Typing.
 It runs entirely in your browser, works offline, needs no installation and never sends data anywhere.
 
 ![Practice screen](docs/practice.png)
