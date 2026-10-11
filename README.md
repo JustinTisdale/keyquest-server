@@ -1,9 +1,9 @@
 # KeyQuest Server ⌨️
 
-KeyQuest Server is a fork of [the original KeyQuest project by ovurevu](https://github.com/ovurevu/keyquest). This fork provides a convenient Docker package for hosting the app, with a minimal Nginx image and Docker Compose configuration. See [Running with Docker](#running-with-docker) to get started.
+KeyQuest Server is a fork of [the original KeyQuest project by ovurevu](https://github.com/ovurevu/keyquest). This fork provides a convenient Docker package for hosting the app, with a Node.js server, SQLite storage, and Docker Compose configuration. See [Running with Docker](#running-with-docker) to get started.
 
 KeyQuest is a free, open-source typing tutor for kids, in the spirit of the classic Mavis Beacon Teaches Typing.
-It runs entirely in your browser, works offline, needs no installation and never sends data anywhere.
+The typing exercises run in your browser. Profiles, settings, and progress are saved on your server and shared by devices that connect to it. A server connection is required to load and save progress.
 
 ![Practice screen](docs/practice.png)
 
@@ -24,25 +24,7 @@ It runs entirely in your browser, works offline, needs no installation and never
 - **Progress tracking** per child: lesson stars, a per-key accuracy heatmap and recent activity.
 - **Multiple typists** with their own avatar, settings and progress.
 - **Sound effects** synthesised in the browser, so no audio files.
-- **Backup and restore** progress as a JSON file.
-
-## Running it
-
-There is nothing to build or install.
-
-**Option 1: just open it.** Double-click `index.html`. That's it.
-
-**Option 2: serve the folder** (needed if your browser blocks local files, and for installing it as an app):
-
-```bash
-cd keyquest
-python3 -m http.server 8080
-# or: npx serve .
-```
-
-Then open <http://localhost:8080>.
-
-Progress is saved in the browser's local storage on that computer. Use *Settings → Export progress* to move it somewhere else.
+- **Backup and restore** all server profiles and progress as a JSON file.
 
 ## Running with Docker
 
@@ -52,15 +34,52 @@ Install Docker with Docker Compose, then run from the `keyquest-server` director
 docker compose up --build -d
 ```
 
-Open <http://localhost:8080>. The image uses Nginx to serve the static app; no Node.js installation or build step is needed. Change `8080` in `docker-compose.yml` to use a different host port.
+Open <http://localhost:8080>, or use the host's address on your trusted network. Change the first `8080` in `docker-compose.yml` to use a different host port.
 
-Stop the server with:
+The container runs as a non-root user. SQLite lives at `/data/keyquest.sqlite`, with its journal files in the same directory. Compose mounts the named `keyquest-data` volume there, so profiles survive restarts, image rebuilds, and container replacement. Run only one application container against this volume, on local storage.
+
+To stop the app while keeping its data:
 
 ```bash
 docker compose down
 ```
 
-Profiles and progress remain in each browser's local storage, so no container volume is needed. A different hostname or port has separate browser storage; use *Settings → Export progress* before moving to another address.
+To rebuild after updating the code:
+
+```bash
+docker compose up --build -d
+```
+
+**Data deletion:** `docker compose down -v` also deletes the database volume. Export a backup before intentionally removing the volume.
+
+## Shared profiles and saves
+
+This version is intended for a household or trusted network. There are no accounts or passwords: everyone who can reach the server can view, change, delete, restore, or reset all profiles. Do not expose it directly to the public internet without access control in front of it. If using a reverse proxy, preserve the original Host header.
+
+Each browser remembers only its selected typist ID. Profiles, settings, lesson records, key statistics, game bests, and the latest 200 activity entries per typist live in SQLite. Other devices see updated data when selecting a profile, opening a screen such as Progress, or returning to the app.
+
+The save indicator shows when results have reached the server. If a save fails, keep the page open and use **Retry**. Pending changes are held in memory; closing the page before saving may lose them. Retried requests do not count the same result twice. **Discard unsaved changes** reloads the server's saved state.
+
+**Starting fresh:** previous browser-only profiles and progress are ignored. Create new typists on the server. There is no migration or support for importing old browser backups.
+
+## Backup and restore
+
+Use **Settings → Export progress** to download all server profiles and progress. Wait for pending saves to finish first. The JSON file uses the `keyquest-server` format, version 1.
+
+Use **Settings → Restore server backup** to restore one of these files. Restore replaces all profiles and progress for every device after confirmation; invalid files are rejected without changing the database. Restore accepts up to 10 MB and 1,000 profiles. Keep a current export before restoring an older backup.
+
+## Running without Docker
+
+Install Node.js 24 or newer, then run:
+
+```bash
+npm ci
+npm start
+```
+
+Open <http://localhost:8080>. The default database is `data/keyquest.sqlite`. Set `DATABASE_PATH` to choose another file and `PORT` to change the listening port. The server creates the database directory and initializes the schema at startup. Database files are excluded from Git and the Docker build context.
+
+Opening `index.html` directly or serving it with a static file server does not provide the required storage API.
 
 ## Project layout
 
@@ -72,14 +91,16 @@ js/data/lessons.js  curriculum, finger map and exercise generator
 js/engine.js        typing session: position, errors, WPM, per-key stats
 js/keyboard.js      on-screen keyboard, hands SVG, heatmap
 js/audio.js         synthesised sound effects (Web Audio)
-js/storage.js       profiles and progress in localStorage
+js/storage.js       server API client and retryable save queue
+server/index.js     HTTP API and static asset serving
+server/database.js  SQLite schema, validation and transactions
 js/game.js          Letter Rain game
 js/race.js          Rocket Race game
 js/bubbles.js       Bubble Pop game
 js/app.js           screens, navigation and glue
 ```
 
-Plain ES2020 JavaScript loaded as classic scripts, so it works from `file://` without a bundler.
+The frontend uses plain JavaScript loaded as classic scripts without a bundler. The Node.js server serves the frontend and its API from the same origin.
 Everything hangs off a single `KQ` namespace.
 
 ## Customising
@@ -91,17 +112,23 @@ Everything hangs off a single `KQ` namespace.
 
 ## Development
 
-The app needs no build. For the end-to-end tests:
-
 ```bash
-npm install
-npx playwright install chromium   # once
+npm ci
+npx playwright install chromium
 npm test
 ```
 
-The tests serve the repo on a random port, drive the whole app in a headless browser, and check the curriculum generator, lesson flow, mastery rules, weak-key practice, games and persistence. Set `CHROME_PATH` to use an installed Chrome instead of the bundled Chromium, or `HEADED=1` to watch.
+The tests use temporary SQLite databases and run backend integration checks, cross-browser persistence and retry checks, and the existing lesson/game end-to-end suite. Set `CHROME_PATH` to use an installed Chrome or Edge instead of bundled Chromium, or `HEADED=1` to watch the lesson/game suite.
 
-Pushes to `main` run the tests and deploy the site to GitHub Pages.
+With Docker and Compose 2.24.4 or newer installed, also run:
+
+```bash
+npm run test:docker
+```
+
+This builds the image in an isolated Compose project using a temporary host port, checks HTTP serving and the non-root user, then removes and recreates the container to verify volume persistence. It removes only its own test containers and volume afterward.
+
+Pull requests and pushes to `main` run both suites in CI. This fork uses Docker hosting; GitHub Pages deployment is disabled because the app requires its backend.
 
 ## Contributing
 

@@ -37,9 +37,25 @@
   document.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
 
   function go(name) {
+    if (!state.profile && name !== "profiles") name = "profiles";
     const builders = { home: renderHome, lessons: renderLessons, progress: renderProgress, settings: renderSettings, games: renderGames, profiles: renderProfiles };
     if (builders[name]) builders[name]();
     show(name);
+    refreshScreen();
+  }
+
+  async function refreshScreen() {
+    const screen = state.screen;
+    if (!screen || screen === "practice" || screen === "results" || GAME_SCREENS.includes(screen) || store.hasPending() || store.error) return;
+    try {
+      await store.load();
+      if (state.screen !== screen) return;
+      state.profile = store.current();
+      if (state.profile) { KQ.audio.enabled = settings().sound; updateChip(); }
+      else if (screen !== "profiles") { renderProfiles(); show("profiles"); return; }
+      const builders = { home: renderHome, lessons: renderLessons, progress: renderProgress, settings: renderSettings, games: renderGames, profiles: renderProfiles };
+      if (builders[screen]) builders[screen]();
+    } catch (error) { store.notify("error", error); }
   }
 
   function settings() { return store.settings(state.profile); }
@@ -113,7 +129,7 @@
   $("btn-home").addEventListener("click", () => (state.profile ? go("home") : go("profiles")));
   $("btn-sound").addEventListener("click", () => {
     if (!state.profile) return;
-    settings().sound = !settings().sound;
+    store.updateSettings(state.profile, { sound: !settings().sound });
     KQ.audio.enabled = settings().sound;
     store.save();
     updateChip();
@@ -546,9 +562,7 @@
   function recordScore(name, label, score) {
     const b = bests();
     const isBest = score > b[name] && score > 0;
-    b[name] = Math.max(b[name], score);
-    store.addHistory(state.profile, { type: "game", label, wpm: null, acc: null, errors: null, seconds: null, score });
-    store.save();
+    store.recordGame(state.profile, name, label, score);
     return { isBest, best: b[name] };
   }
   for (const name of GAME_SCREENS) {
@@ -666,44 +680,47 @@
   }
   for (const [k, id] of Object.entries(SETTING_IDS)) {
     $(id).addEventListener("change", (e) => {
-      settings()[k] = e.target.checked;
+      store.updateSettings(state.profile, { [k]: e.target.checked });
       if (k === "sound") { KQ.audio.enabled = e.target.checked; updateChip(); }
       store.save();
     });
   }
-  $("set-level").addEventListener("change", (e) => { settings().level = e.target.value; store.save(); });
-  $("btn-export").addEventListener("click", () => {
-    const blob = new Blob([store.exportJson()], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `keyquest-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  $("set-level").addEventListener("change", (e) => store.updateSettings(state.profile, { level: e.target.value }));
+  $("btn-export").addEventListener("click", async () => {
+    try {
+      const blob = new Blob([await store.exportJson()], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `keyquest-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch (error) { alert(error.message); }
   });
   $("btn-import").addEventListener("click", () => $("import-file").click());
   $("import-file").addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     try {
-      store.importJson(await file.text());
+      if (!confirm("Replace ALL shared typists and progress with this server backup? This affects every device.")) return;
+      await store.importJson(await file.text());
       state.profile = store.current();
       e.target.value = "";
       if (state.profile) { updateChip(); go("home"); } else go("profiles");
     } catch (err) {
-      alert("Sorry, that file doesn't look like a KeyQuest backup.");
+      alert(err.message);
+    } finally {
+      e.target.value = "";
     }
   });
-  $("btn-delete-profile").addEventListener("click", () => {
-    if (!confirm(`Delete ${state.profile.name} and all their progress?`)) return;
-    store.deleteProfile(state.profile.id);
-    state.profile = null;
-    go("profiles");
+  $("btn-delete-profile").addEventListener("click", async () => {
+    if (!confirm(`Delete ${state.profile.name} and all their progress from the server for EVERY device?`)) return;
+    try { await store.deleteProfile(state.profile.id); state.profile = null; go("profiles"); }
+    catch (error) { alert(error.message); }
   });
-  $("btn-reset-all").addEventListener("click", () => {
-    if (!confirm("Erase ALL typists and progress? This cannot be undone.")) return;
-    store.resetAll();
-    state.profile = null;
-    go("profiles");
+  $("btn-reset-all").addEventListener("click", async () => {
+    if (!confirm("Erase ALL shared typists and progress from the server for EVERY device? This cannot be undone.")) return;
+    try { await store.resetAll(); state.profile = null; go("profiles"); }
+    catch (error) { alert(error.message); }
   });
 
   // ---------- global key routing ----------
@@ -722,14 +739,36 @@
   document.addEventListener("pointerdown", () => KQ.audio.ensure(), { once: true });
   document.addEventListener("keydown", () => KQ.audio.ensure(), { once: true });
 
-  // ---------- boot ----------
-  store.load();
-  state.profile = store.current();
-  if (state.profile) {
-    KQ.audio.enabled = settings().sound;
-    updateChip();
-    go("home");
-  } else {
-    go("profiles");
+  // ---------- server status and boot ----------
+  let booted = false;
+  function renderStorageStatus() {
+    const status = store.status;
+    $("storage-status").dataset.status = status;
+    $("storage-message").textContent = status === "loading" ? "Connecting to server…" : status === "saving" ? "Saving to server…" : status === "error" ? store.error.message : "Saved to server";
+    $("btn-retry-save").hidden = status !== "error";
+    $("btn-discard-save").hidden = status !== "error" || !store.hasPending();
   }
+  window.addEventListener("storage-status", renderStorageStatus);
+  function resume() {
+    state.profile = store.current();
+    if (state.profile) { KQ.audio.enabled = settings().sound; updateChip(); }
+    if (!booted || !state.profile) go(state.profile ? "home" : "profiles");
+    else refreshScreen();
+    booted = true;
+    $("app").inert = false;
+  }
+  $("btn-retry-save").addEventListener("click", async () => {
+    try { await store.retry(); if (!store.error) resume(); }
+    catch (error) { store.notify("error", error); }
+  });
+  $("btn-discard-save").addEventListener("click", async () => {
+    if (!confirm("Discard this page's unsaved changes and reload the saved server data?")) return;
+    try { await store.discard(); resume(); }
+    catch (error) { store.notify("error", error); }
+  });
+  window.addEventListener("focus", () => { if (booted) refreshScreen(); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && booted) refreshScreen(); });
+  $("app").inert = true;
+  renderStorageStatus();
+  store.load().then(resume).catch(error => store.notify("error", error));
 })();

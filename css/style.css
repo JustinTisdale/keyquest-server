@@ -315,3 +315,9 @@ select { font: inherit; font-weight: 700; padding: 8px 12px; border-radius: 10px
   font-weight: 900; box-shadow: var(--shadow); animation: wobble .5s ease-in-out;
 }
 @keyframes wobble { 25% { transform: rotate(-2deg); } 75% { transform: rotate(2deg); } }
+
+/* Server save status remains available even when initial loading fails. */
+.storage-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .5rem; padding: .4rem .75rem; background: #e6f4ed; color: #24553b; font-size: .85rem; position: sticky; top: 0; z-index: 100; }
+.storage-status[data-status="error"] { background: #fff0df; color: #713500; }
+.storage-status .btn { padding: .35rem .65rem; font-size: .85rem; }
+.storage-status span { overflow-wrap: anywhere; }

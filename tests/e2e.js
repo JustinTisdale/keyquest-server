@@ -2,24 +2,25 @@
 //   npm test                      (uses Playwright's bundled Chromium)
 //   CHROME_PATH=/usr/bin/google-chrome npm test   (use an installed Chrome)
 //   HEADED=1 npm test             (watch it run)
-const http = require("http");
+const os = require("node:os");
+const { createApp } = require("../server");
 const fs = require("fs");
 const path = require("path");
 const assert = require("assert");
 const { chromium } = require("playwright");
 
-const ROOT = path.join(__dirname, "..");
-const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png" };
-
 function serve() {
-  return new Promise((resolve) => {
-    const server = http.createServer((req, res) => {
-      const file = path.join(ROOT, decodeURIComponent(req.url.split("?")[0]).replace(/\/$/, "/index.html"));
-      if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); return res.end(); }
-      res.writeHead(200, { "Content-Type": TYPES[path.extname(file)] || "application/octet-stream" });
-      fs.createReadStream(file).pipe(res);
-    });
-    server.listen(0, "127.0.0.1", () => resolve({ server, url: `http://127.0.0.1:${server.address().port}/index.html` }));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "keyquest-e2e-"));
+  const { app, store } = createApp({ dbPath: path.join(dir, "keyquest.sqlite") });
+  return new Promise(resolve => {
+    const server = app.listen(0, "127.0.0.1", () => resolve({
+      server, url: `http://127.0.0.1:${server.address().port}/index.html`,
+      cleanup: async () => {
+        await new Promise(done => server.close(done));
+        store.db.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      },
+    }));
   });
 }
 
@@ -31,7 +32,7 @@ function check(name, cond) {
 }
 
 (async () => {
-  const { server, url } = await serve();
+  const { url, cleanup } = await serve();
   const browser = await chromium.launch({ headless: !process.env.HEADED, executablePath: process.env.CHROME_PATH || undefined, args: ["--no-sandbox"] });
   const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
   const errors = [];
@@ -61,7 +62,7 @@ function check(name, cond) {
 
   try {
     console.log("Curriculum data");
-    await page.goto(url); await wait(200);
+    await page.goto(url); await page.waitForSelector("#screen-profiles.active");
     const gen = await page.evaluate(() => {
       let bad = 0, total = 0;
       for (const l of KQ.LESSONS) for (const lv of Object.keys(KQ.LEVELS)) for (const e of KQ.buildExercises(l, lv)) {
@@ -169,7 +170,8 @@ function check(name, cond) {
     console.log("Progress and persistence");
     await page.click("#btn-home"); await page.click("#nav-progress"); await wait(150);
     check("heatmap colours used keys", (await page.$$("#kb-heat .kb-key.heat-good, #kb-heat .kb-key.heat-ok, #kb-heat .kb-key.heat-bad")).length > 0);
-    await page.reload(); await wait(200);
+    await page.evaluate(() => KQ.store.flush());
+    await page.reload(); await page.waitForSelector("#screen-home.active");
     check("profile persists across reload", await page.$eval("#chip-name", (e) => e.textContent === "Ada"));
 
     console.log("Mobile layout");
@@ -185,6 +187,6 @@ function check(name, cond) {
     process.exitCode = 1;
   } finally {
     await browser.close();
-    server.close();
+    await cleanup();
   }
 })();

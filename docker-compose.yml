@@ -2,5 +2,11 @@ services:
   keyquest:
     build: .
     ports:
-      - "8080:80"
+      - "8080:8080"
+    volumes:
+      - keyquest-data:/data
     restart: unless-stopped
+    init: true
+
+volumes:
+  keyquest-data:

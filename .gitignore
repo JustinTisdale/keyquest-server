@@ -3,3 +3,8 @@ Thumbs.db
 node_modules/
 *.log
 test-results/
+
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

@@ -1,5 +1,9 @@
 **
 !Dockerfile
+!package.json
+!package-lock.json
+!server/
+!server/**
 !index.html
 !manifest.webmanifest
 !LICENSE

@@ -10,6 +10,11 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<div id="storage-status" class="storage-status" role="status" aria-live="polite">
+  <span id="storage-message">Connecting to server…</span>
+  <button id="btn-retry-save" class="btn" hidden>Retry</button>
+  <button id="btn-discard-save" class="btn" hidden>Discard unsaved changes</button>
+</div>
 <div id="app">
   <header class="topbar">
     <button class="brand" id="btn-home" title="Home">⌨️ <span>KeyQuest</span></button>
@@ -268,10 +273,10 @@
       </div>
       <div class="card">
         <h2>Backup</h2>
-        <p class="muted">Progress is saved in this browser only. Export a backup to move it to another computer.</p>
+        <p class="muted">Profiles and progress are shared by every device using this server. Export backs up all typists. Restore replaces all server data; old browser backups are not supported.</p>
         <div class="row wrap">
           <button id="btn-export" class="btn">⬇ Export progress</button>
-          <button id="btn-import" class="btn">⬆ Import progress</button>
+          <button id="btn-import" class="btn">⬆ Restore server backup</button>
           <input type="file" id="import-file" accept="application/json" hidden>
         </div>
       </div>

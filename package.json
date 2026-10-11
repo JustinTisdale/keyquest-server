@@ -1,14 +1,24 @@
 {
   "name": "keyquest",
   "version": "1.0.0",
-  "description": "A free, open-source typing tutor for kids that runs entirely in the browser.",
+  "description": "Self-hosted KeyQuest typing tutor with shared SQLite progress.",
   "private": true,
   "scripts": {
-    "start": "python3 -m http.server 8080",
-    "test": "node tests/e2e.js"
+    "start": "node server/index.js",
+    "test": "npm run test:server && npm run test:storage && node tests/e2e.js",
+    "test:server": "node --test tests/server.test.js",
+    "test:storage": "node --test tests/storage.test.js",
+    "test:docker": "node tests/docker-smoke.js"
   },
   "devDependencies": {
     "playwright": "^1.60.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "express": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
 }
